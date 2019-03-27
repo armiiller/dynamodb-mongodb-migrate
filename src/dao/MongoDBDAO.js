@@ -15,9 +15,9 @@ class MongoDBDAO {
         let bulkWriteReqArray = lodash.map(items, (item) => {
             return {
                 updateOne: {
-                    filter: { _id: item['_id'] },
+                    filter: { sid: item['sid'], id: item['id'] },
                     update: {
-                        $set: lodash.omit(item, '_id')
+                        $set: lodash.omit(item, ['sid', 'id'])
                     },
                     upsert: true
                 }
