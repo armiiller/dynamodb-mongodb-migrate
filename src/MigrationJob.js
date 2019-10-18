@@ -79,6 +79,10 @@ class MigrationJob {
                     endTime = new Date().getTime();
                     console.log('Loop completion time : ', endTime - startTime, ' ms');
                     iteration++;
+                    while(!(await ctx.limiter.getTokensRemaining())){
+                      console.log(`Waiting to not exceed rate limit...`);
+                      await new Promise(done => setTimeout(done, 1000));
+                    }
                 } while (lastEvalKey);
                 console.log('Migration completed');
                 resolve();
