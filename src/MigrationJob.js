@@ -44,14 +44,20 @@ class MigrationJob {
                 do {
                     startTime = new Date().getTime();
                     while(!ctx.limiter.tryRemoveTokens(permitsToConsume)){
-                      console.log(`Waiting to not exceed rate limit...`);
-                      await new Promise(done => setTimeout(done, 1000));
+                      console.log(`${ctx.sourceTableName} - Waiting to not exceed rate limit...`);
+                      let wait = 1;
+                      if(permitsToConsume > ctx.dynamoDbReadThroughput){
+                        console.log(`${ctx.sourceTableName} - Permits to consume (${permitsToConsume}) > throughput (${ctx.dynamoDbReadThroughput})`);
+                        wait = Math.ceil(permitsToConsume / ctx.dynamoDbReadThroughput);
+                      }
+                      await new Promise(done => setTimeout(done, wait * 1000));
+                      permitsToConsume = 1;
                     }
                     let sourceItemResponse = await ctx.dynamoDBDAO.scan(ctx.filterExpression, ctx.expressionAttributeNames, ctx.expressionAttributeValues, lastEvalKey, ctx.dynamodbEvalLimit);
                     totalItemCount += sourceItemResponse.Count;
                     let consumedCapacity = sourceItemResponse.ConsumedCapacity.CapacityUnits;
-                    console.log('Consumed capacity ', consumedCapacity);
-                    console.log('Received ', sourceItemResponse.Count, ' items at iteration ', iteration, ' and total of ', totalItemCount, ' items received');
+                    console.log(`${ctx.sourceTableName} - Consumed capacity `, consumedCapacity);
+                    console.log(`${ctx.sourceTableName} - Received `, sourceItemResponse.Count, ' items at iteration ', iteration, ' and total of ', totalItemCount, ' items received');
                     permitsToConsume = Math.round(consumedCapacity - 1);
                     if (permitsToConsume < 1) {
                         permitsToConsume = 1;
@@ -64,8 +70,8 @@ class MigrationJob {
                         .value();
                     if (targetItems.length > 0) {
                         let results = await ctx.mongoDBDAO.intertOrUpdateItems(targetItems);
-                        console.log('Modified mongodb doc count : ', results.modifiedCount);
-                        console.log('Inserted mongodb doc count : ', results.upsertedCount);
+                        console.log(`${ctx.sourceTableName} - Modified mongodb doc count : `, results.modifiedCount);
+                        console.log(`${ctx.sourceTableName} - Inserted mongodb doc count : `, results.upsertedCount);
                     }
                     if (sourceItemResponse && sourceItemResponse.LastEvaluatedKey) {
                         lastEvalKey = sourceItemResponse.LastEvaluatedKey;
@@ -73,7 +79,7 @@ class MigrationJob {
                         lastEvalKey = null;
                     }
                     endTime = new Date().getTime();
-                    console.log('Loop completion time : ', endTime - startTime, ' ms');
+                    console.log(`${ctx.sourceTableName} - Loop completion time : `, endTime - startTime, ' ms');
                     iteration++;
                 } while (lastEvalKey);
                 console.log('Migration completed');
