@@ -20,13 +20,6 @@ class MigrationJob {
         this.expressionAttributeValues = null;
         this.dynamoDbReadThroughput = dynamoDbReadThroughput ? Number(dynamoDbReadThroughput) : 25;
         this.limiter = new RateLimiter(this.dynamoDbReadThroughput, 1000);
-        this._removeTokens = (tokenCount) => {
-            return new Promise((resolve, reject) => {
-                this.limiter.removeTokens(tokenCount, () => {
-                    resolve();
-                });
-            });
-        }
     }
 
     setMapperFunction(mapperFunction) {
@@ -50,7 +43,10 @@ class MigrationJob {
                 let lastEvalKey, startTime, endTime, totalItemCount = 0, iteration = 1, permitsToConsume = 1;
                 do {
                     startTime = new Date().getTime();
-                    await ctx._removeTokens(permitsToConsume);
+                    while(!ctx.limiter.tryRemoveTokens(permitsToConsume)){
+                      console.log(`Waiting to not exceed rate limit...`);
+                      await new Promise(done => setTimeout(done, 1000));
+                    }
                     let sourceItemResponse = await ctx.dynamoDBDAO.scan(ctx.filterExpression, ctx.expressionAttributeNames, ctx.expressionAttributeValues, lastEvalKey, ctx.dynamodbEvalLimit);
                     totalItemCount += sourceItemResponse.Count;
                     let consumedCapacity = sourceItemResponse.ConsumedCapacity.CapacityUnits;
@@ -79,10 +75,6 @@ class MigrationJob {
                     endTime = new Date().getTime();
                     console.log('Loop completion time : ', endTime - startTime, ' ms');
                     iteration++;
-                    while(!(await ctx.limiter.getTokensRemaining())){
-                      console.log(`Waiting to not exceed rate limit...`);
-                      await new Promise(done => setTimeout(done, 1000));
-                    }
                 } while (lastEvalKey);
                 console.log('Migration completed');
                 resolve();
